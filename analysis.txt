@@ -1,0 +1,11 @@
+analysis of the project
+
+pseudo code
+mainFunction :: [Truck] -> [Client] -> Time -> Solution -> Solution
+mainFunction trucks clients !t !sol = if (t <= tmin)
+  then sol
+  else (mainFunction trucks clients (changeTemp t tmin) (
+    if (tPF (totalCost (swapClient sol)) (totalCost sol) t) > (rand 0 1)
+    then (swapClient sol)
+    else sol
+  ))
