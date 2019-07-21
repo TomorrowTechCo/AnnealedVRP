@@ -1,12 +1,14 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 module Types where
 
+import           Control.Monad.Reader
 import           Data.Matrix
 import           Data.Text
 import           Data.Time
-import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector          as V
 import           System.Random
 
 -- |A location in the map. Could be a client, a service station, or a depot.
@@ -23,22 +25,22 @@ import           System.Random
 
 -- as individual data types with typeclasses
 data Client = Client
-  { clientId          :: Integer
+  { clientId          :: Int
   , clientName        :: Text
   , clientPkgWeight   :: Float
   , clientArrivalTime :: LocalTime } deriving Show
 data SStation = SStation
-  { serviceStationId    :: Integer
+  { serviceStationId    :: Int
   , serviceStationName  :: Text
   , serviceStationPrice :: Float } deriving Show
 data Depot = Depot
-  { depotId   :: Integer
+  { depotId   :: Int
   , depotName :: Text } deriving Show
 
 class Location k where
   type Id k :: *
   getName :: k -> Text
-  getId   :: k -> Integer
+  getId   :: k -> Int
 
 instance Location Client where
   type Id Client = Int
@@ -78,9 +80,77 @@ type Cost = Float
 type Temperature = Float
 type Time = Int
 type Probability = Int
+type Distance = Float
 
 -- Funciones que se usan para el recocido simulado
 type EnergyFunction a = a -> Cost
 type TemperatureFunction = Time -> Temperature
 type TransitionProbabilityFunction = Cost -> Cost -> Temperature -> Probability
 type MotionFunction a = StdGen -> a -> (StdGen, a)
+
+-- Config type for the reader environment.
+data Config = Config
+  { getTrucks  :: V.Vector Truck
+  , getRoutes  :: Matrix Distance
+  , getClients :: V.Vector Client
+  , getTMax    :: Time }
+
+-- Wrapping the config in a reader stack.
+newtype ConfigM a = ConfigM
+  { runConfigM :: ReaderT Config IO a }
+  deriving (Applicative, Functor, Monad, MonadIO, MonadReader Config)
+
+-- this type represents a possible change in the solution.
+data Modif = MoveTwo (Id Client) (Int, Int) (Id Client) (Int, Int)
+           | MoveOne (Id Client) (Int, Int) (Int, Int)
+
+-- monad for quickly accessing values from matrix
+data MatrixM a = MatrixM (Matrix a) a [a]
+-- meaning: a MatrixM of type Client Id
+
+-- instance Functor MatrixM where
+--   fmap f ()
+
+{-
+  monad for accessing random values in different ranges
+  expected interface
+  someFunc a b = a + m1 + b + m2
+    where
+      [m1, m2] = do
+        getRnd (0, 5)
+        getRnd (1, 4)
+
+  we pass the config to the monad through a "run" function
+  runRand :: RandomM a -> StdGen -> (StdGen, [a])
+
+  someFunc a b rand = a + m1 + b + m2
+    where
+      (rand', [m1, m2]) = runRand rand $ do
+        ...etc
+
+  RandomM Int returns a list of ints.
+  the constructor is as follows:
+  newtype RandomM a = RandomM (StdGen, [a])
+
+  the monad carries around the list of generated values and the
+  random generator.
+
+  fmap :: (a -> b) -> RandomM a -> RandomM b
+  (<*>) :: RandomM (a -> b) -> RandomM a -> RandomM b
+  (>>=) :: (a -> RandomM b) -> RandomM a -> RandomM b
+
+-}
+
+-- new operator
+(~#) :: (StdGen, [a]) -> (StdGen -> (a, StdGen)) -> (StdGen, [a])
+(~#) (rand, l) func = (snd $ func rand, (fst $ func rand):l)
+
+func :: StdGen -> (Int, StdGen)
+func = randomR (0::Int, 1)
+func2 = randomR (0::Int, 2)
+
+testFunc :: IO ()
+testFunc = do
+  newRand <- getStdGen
+  dinero <- return $! (newRand, []) ~# func ~# func2
+  putStr $ show dinero
