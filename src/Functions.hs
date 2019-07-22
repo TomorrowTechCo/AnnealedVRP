@@ -12,7 +12,9 @@ import qualified Data.Text            as T
 import           Data.Time
 import qualified Data.Vector          as V
 import           System.Random
+
 import           Types
+import           Utils
 
 -- la lista de camiones.
 -- TODO: change this for Reader Monad
@@ -86,22 +88,38 @@ totalCost sol = totalCost' sol 0
 {-
   Faster checking of cost by taking into account current, already calculated
   cost and computing the difference.
-  TODO: overload the operator (!!) so whenever it's out of bounds, it assumes
+  DONE: overload the operator (!!) so whenever it's out of bounds, it assumes
   the travel is between the client and Depot, and returns the depot's id (1
-  for the time being).
+  for the time being). (created new operator)
 -}
-updCost :: Cost -> Solution -> Modif -> Cost
-updCost curCost sol (MoveTwo a (m1,m2) b (n1,n2)) =
-  curCost - (getElem (sol!!m1!!0!!(m2-1)) a routeList)
-    - (getElem a (sol!!m1!!0!!(m2+1)) routeList)
-    + (getElem (sol!!m1!!0!!(m2-1)) b routeList)
-    + (getElem b (sol!!m1!!0!!(m2+1)) routeList)
-    - (getElem (sol!!n1!!0!!(n2-1)) b routeList)
-    - (getElem b (sol!!n1!!0!!(n2+1)) routeList)
-    + (getElem (sol!!n1!!0!!(n2-1)) a routeList)
-    + (getElem a (sol!!n1!!0!!(n2+1)) routeList)
+updCost :: Cost -> Solution -> Matrix Float -> Modif -> Cost
+updCost curCost sol mtrx (MoveTwo a (m1,m2) b (n1,n2)) =
+  curCost - get (loc m1 m2 (-)) a
+    - get a (loc m1 m2 (+))
+    + get (loc m1 m2 (-)) b
+    + get b (loc m1 m2 (+))
+    - get (loc n1 n2 (-)) b
+    - get b (loc n1 n2 (+))
+    + get (loc n1 n2 (-)) a
+    + get a (loc n1 n2 (+))
+  where
+    get x y = getElem x y mtrx
+    (!+) :: [Id Client] -> Int -> Id Client
+    (!+) l i = if (i > (length l)||i < 0) then 1 else l !! i
+    loc x y sig = (sol!!x!!0!+(sig y 1))
 
-updCost curCost sol (MoveOne a (m1,m2) (n1,n2))   = _ -- TODO: implement this
+updCost curCost sol mtrx (MoveOne a (m1,m2) (n1,n2))   =
+  curCost - get (loc m1 m2 (-)) a
+  - get a (loc m1 m2 (+))
+  + get (loc m1 m2 (-)) (loc m1 m2 (+))
+  - get (loc n1 n2 (-)) (loc n1 n2 (+))
+  + get (loc n1 n2 (-)) a
+  + get a (loc n1 n2 (+))
+  where
+    get x y = getElem x y mtrx
+    (!+) :: [Id Client] -> Int -> Id Client
+    (!+) l i = if (i > (length l)||i < 0) then 1 else l !! i
+    loc x y sig = (sol!!x!!0!+(sig y 1))
 
 -- Temperature function, that'll give us the current temp based on the distance
 -- between the current and ending time.
@@ -125,16 +143,11 @@ swapClient (MoveOne a (m1,m2) (n1,n2)) sol =
   plus their locations in the current solution. May occasionally move a
   client alone, changing the size of the truck routes.
 -}
-getSwap :: StdGen -> Solution -> Modif
+getSwap :: StdGen -> Solution -> (Modif, StdGen)
 getSwap rand sol = if twoP
-  then MoveTwo (sol!!m1!!0!!m2) (m1,m2) (sol!!n1!!0!!n2) (n1,n2)
-  else MoveOne (sol!!m1!!0!!m2) (m1,m2) (n1,n2)
+  then (MoveTwo (sol!!m1!!0!!m2) (m1,m2) (sol!!n1!!0!!n2) (n1,n2), rand'')
+  else (MoveOne (sol!!m1!!0!!m2) (m1,m2) (n1,n2), rand'')
   where
-    -- (m1, rand0) = randomB sol rand
-    -- (m2, rand1) = randomB (sol !! m1 !! 0) rand0
-    -- (twoP :: Bool, rand2) = random rand1
-    -- (n1, rand3) = randomB sol rand2
-    -- (n2, rand4) = randomB (sol !! n1 !! 0) rand3
     (rand', [m1, m2, n1, n2]) = (rand, []) ~# randomB sol
       ~# randomB (sol !! m1 !! 0)
       ~# randomB sol
@@ -153,7 +166,7 @@ randomB list = randomR (0, length list)
 calcProb :: TransitionProbabilityFunction
 calcProb cCurrent cChanged curTemp = if (cCurrent < cChanged)
   then 100
-  else (ceiling . exp . negate) $ (cCurrent - cChanged) / curTemp
+  else (ceiling . (*100) . exp . negate) $ (cCurrent - cChanged) / curTemp
 
 {-
 Checking:
@@ -174,17 +187,18 @@ checkValues = do
             else True
 
 {- Main loop. -}
-anneal :: StdGen -> Time -> Solution -> Solution
-anneal rand !time !sol = if (time >= tmax)
+anneal :: StdGen -> Time -> Matrix Float -> Cost -> Solution -> Solution
+anneal rand !time mtrx !cost !sol = if (time >= tmax)
   then sol
-  else anneal rand' (time - 1) $
-    if (calcProb (totalCost sol)
-        (totalCost (swapClient rand sol))
+  else anneal rand'' (time - 1) mtrx cost $
+    if (calcProb cost
+        (updCost cost sol mtrx solModif)
         (curTemp time)) > (randomVal)
-    then (swapClient rand sol)
+    then (swapClient solModif sol)
     else sol
   where
     (randomVal, rand') = randomR (1, 100) rand
+    (solModif, rand'') = getSwap rand' sol
 
 {- Executable. -}
 runApp :: IO ()
@@ -198,12 +212,19 @@ runApp = do
 
   -- verify if it's possible to solve
   valid <- runReaderT checkValues conf
+  if not valid
+    then putStrLn "at least one route is impossible, abort."
+    else do
 
-  -- generate an initial solution
-  init' <- runReaderT initSol conf
-  init <- return $! init' randGen
+    -- generate an initial solution
+    init' <- runReaderT initSol conf
+    let init = init' randGen
 
+    -- calculate initial cost
+    let initcost = totalCost init
 
+    -- calculate
+    let finalSol = anneal randGen (getTMax conf) (getRoutes conf) initcost init
 
-  result <- return $ runReader x conf
-  putStrLn $ "The solution is :" ++ show result
+    -- return result
+    putStrLn $ "the solution is: " ++ show finalSol

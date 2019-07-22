@@ -140,17 +140,3 @@ data MatrixM a = MatrixM (Matrix a) a [a]
   (>>=) :: (a -> RandomM b) -> RandomM a -> RandomM b
 
 -}
-
--- new operator
-(~#) :: (StdGen, [a]) -> (StdGen -> (a, StdGen)) -> (StdGen, [a])
-(~#) (rand, l) func = (snd $ func rand, (fst $ func rand):l)
-
-func :: StdGen -> (Int, StdGen)
-func = randomR (0::Int, 1)
-func2 = randomR (0::Int, 2)
-
-testFunc :: IO ()
-testFunc = do
-  newRand <- getStdGen
-  dinero <- return $! (newRand, []) ~# func ~# func2
-  putStr $ show dinero
