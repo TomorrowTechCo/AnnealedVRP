@@ -18,5 +18,5 @@ testFunc = do
   putStr $ show dinero
 
 -- utility operator to extract several values of a matrix.
--- (#>) :: (Monoid a) => (Matrix a, a) -> (Int, Int) -> (Matrix a, a)
--- (#>) () func = _
+(#>) :: (Matrix Int, Int) -> (Int, Int) -> (Matrix Int, Int)
+(#>) (mtrx, a) (x, y) = (mtrx, a + (getElem x y mtrx))

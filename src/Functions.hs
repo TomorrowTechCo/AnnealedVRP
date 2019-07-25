@@ -2,12 +2,17 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Functions where
+module Functions
+  ( anneal
+  , initSol
+  , checkValues
+  , totalCost ) where
 
 import           Control.Monad.Reader
 import           Data.List
 import           Data.List.Index
 import           Data.Matrix
+import qualified Data.Sequence        as Sq
 import qualified Data.Text            as T
 import           Data.Time
 import qualified Data.Vector          as V
@@ -26,7 +31,7 @@ truckList' = V.fromList truckList
 
 -- la matriz de distancias.
 -- TODO: change this for Reader Monad
-routeList :: Matrix Float
+routeList :: Matrix Distance
 routeList = matrix 10 10 (\(i, j) -> fromIntegral $ abs (i-j))
 
 parseDate :: String -> LocalTime
@@ -34,12 +39,15 @@ parseDate = parseTimeOrError True defaultTimeLocale "%d %m %Y %H:%M:%S"
 
 -- La lista de clientes.
 -- TODO: this goes into the Reader Monad
-clientList :: [Client]
-clientList = [Client 123 "Juan" 10.0 $ parseDate "10 02 2019 10:00:00"
-            , Client 124 "Maria" 15.0 $ parseDate "11 02 2019 11:00:00"]
+clientList :: V.Vector Client
+clientList = V.fromList [Client "Juan" 10.0
+                        , Client "Maria" 15.0]
 
-clientList' :: V.Vector Client
-clientList' = V.fromList clientList
+indexes' :: Int -> [Id Client]
+indexes' 0 = []
+indexes' n = n:(indexes' $ n - 1)
+
+indexes n = (V.fromList . reverse) $ indexes' n
 
 -- tiempo máximo
 -- TODO: put this on the reader monad
@@ -52,35 +60,35 @@ initSol' !sol !clients rand = case clients of
   []     -> sol
   (x:xs) -> initSol' (insertLoc i x sol) xs rand'
   where
-    (i, rand') = randomR (1 :: Int, length clients) rand
-    insertLoc :: Int -> Int -> Solution -> Solution
-    insertLoc i loc = modifyAt i (modifyAt 0 (loc:))
+    (i, rand') = randomR (1, length clients) rand
+    insertLoc :: Int -> Id Client -> Solution -> Solution
+    insertLoc i client = Sq.adjust' (Sq.insertAt 0 client) i
 
 -- generates an empty solution from the number of trucks.
 emptySol :: (MonadReader Config m, MonadIO m) => m Solution
 emptySol = do
   listTrucks <- asks getTrucks
-  return $! take (length listTrucks) $ repeat [[]]
+  return $! Sq.fromList $ take (length listTrucks) $ repeat Sq.empty
 
 initSol :: (MonadReader Config m, MonadIO m) => m (StdGen -> Solution)
 initSol = do
   empty <- emptySol
   clientList <- asks getClients
-  return $! initSol' empty $ V.toList $ fmap getId clientList
+  return $! initSol' empty $ V.toList $ clientList
 
 -- Compute the total cost of a truck's route
-truckCost' :: Cost -> Id Client -> [Id Client] -> Cost
-truckCost' cost last [] = cost + getElem last 1 routeList
-truckCost' cost last (x:xs) = truckCost' (cost + getElem last x routeList) x xs
+truckCost' :: Cost -> Id Client -> Sq.Seq (Id Client) -> Cost
+truckCost' cost last Sq.Empty = cost + getElem last 1 routeList
+truckCost' cost last (x Sq.:<| xs) = truckCost' (cost + getElem last x routeList) x xs
 
-truckCost :: [Id Client] -> Cost
+truckCost :: Sq.Seq (Id Client) -> Cost
 truckCost = truckCost' 0 1
 
 -- Energy function, measuring the total travel distance for the current
 -- solution.
 totalCost' :: Solution -> Cost -> Cost
-totalCost' [] acc     = acc
-totalCost' (x:xs) acc = totalCost' xs (truckCost (x!!1) + acc)
+totalCost' Sq.Empty acc      = acc
+totalCost' (x Sq.:<| xs) acc = totalCost' xs (truckCost x + acc)
 
 totalCost :: EnergyFunction Solution
 totalCost sol = totalCost' sol 0
@@ -92,9 +100,10 @@ totalCost sol = totalCost' sol 0
   the travel is between the client and Depot, and returns the depot's id (1
   for the time being). (created new operator)
 -}
-updCost :: Cost -> Solution -> Matrix Float -> Modif -> Cost
-updCost curCost sol mtrx (MoveTwo a (m1,m2) b (n1,n2)) =
-  curCost - get (loc m1 m2 (-)) a
+updCost :: Cost -> Solution -> Matrix Distance -> Modif -> Cost
+updCost curCost sol mtrx modif = case modif of
+  (MoveTwo a (m1,m2) b (n1,n2)) ->
+    curCost - get (loc m1 m2 (-)) a
     - get a (loc m1 m2 (+))
     + get (loc m1 m2 (-)) b
     + get b (loc m1 m2 (+))
@@ -102,41 +111,39 @@ updCost curCost sol mtrx (MoveTwo a (m1,m2) b (n1,n2)) =
     - get b (loc n1 n2 (+))
     + get (loc n1 n2 (-)) a
     + get a (loc n1 n2 (+))
+  (MoveOne a (m1,m2) (n1,n2)) ->
+    curCost - get (loc m1 m2 (-)) a
+    - get a (loc m1 m2 (+))
+    + get (loc m1 m2 (-)) (loc m1 m2 (+))
+    - get (loc n1 n2 (-)) (loc n1 n2 (+))
+    + get (loc n1 n2 (-)) a
+    + get a (loc n1 n2 (+))
   where
     get x y = getElem x y mtrx
-    (!+) :: [Id Client] -> Int -> Id Client
-    (!+) l i = if (i > (length l)||i < 0) then 1 else l !! i
-    loc x y sig = (sol!!x!!0!+(sig y 1))
-
-updCost curCost sol mtrx (MoveOne a (m1,m2) (n1,n2))   =
-  curCost - get (loc m1 m2 (-)) a
-  - get a (loc m1 m2 (+))
-  + get (loc m1 m2 (-)) (loc m1 m2 (+))
-  - get (loc n1 n2 (-)) (loc n1 n2 (+))
-  + get (loc n1 n2 (-)) a
-  + get a (loc n1 n2 (+))
-  where
-    get x y = getElem x y mtrx
-    (!+) :: [Id Client] -> Int -> Id Client
-    (!+) l i = if (i > (length l)||i < 0) then 1 else l !! i
-    loc x y sig = (sol!!x!!0!+(sig y 1))
+    (!+) :: Sq.Seq (Id Client) -> Int -> Id Client
+    (!+) l i = if (i > (length l)||i < 0) then 1 else l `Sq.index` i
+    loc x y sig = (sol `Sq.index` x !+ (sig y 1))
 
 -- Temperature function, that'll give us the current temp based on the distance
 -- between the current and ending time.
 curTemp :: TemperatureFunction
 curTemp curr = 50
-  * (exp (0.0 - (5.0 * ((fromIntegral tmax) / (fromIntegral curr)))) :: Float)
+  * (exp (0.0 - (5.0 * ((fromIntegral tmax) / (fromIntegral curr)))) :: Double)
 
 -- Motion function, that swaps two random clients of position.
 -- note: if only one client is to be moved, place it before the selected
 -- position.
 swapClient :: Modif -> Solution -> Solution
 swapClient (MoveTwo a (m1,m2) b (n1,n2)) sol =
-  (modifyAt n1 (modifyAt 0 (setAt n2 a)))
-  (modifyAt m1 (modifyAt 0 (setAt m2 b)) sol)
+  (adjust'' n1 (Sq.update n2 a))
+  (adjust'' m1 (Sq.update m2 b) sol)
+  where
+    adjust'' = flip Sq.adjust'
 swapClient (MoveOne a (m1,m2) (n1,n2)) sol =
-  (modifyAt m1 (modifyAt 0 (deleteAt m2)))
-  (modifyAt n1 (modifyAt 0 (insertAt n2 a)) sol)
+  (adjust'' m1 (Sq.deleteAt m2))
+  (adjust'' n1 (Sq.insertAt n2 a) sol)
+  where
+    adjust'' = flip Sq.adjust'
 
 {-
   simplified motion function that only returns the clients to be swapped,
@@ -145,16 +152,17 @@ swapClient (MoveOne a (m1,m2) (n1,n2)) sol =
 -}
 getSwap :: StdGen -> Solution -> (Modif, StdGen)
 getSwap rand sol = if twoP
-  then (MoveTwo (sol!!m1!!0!!m2) (m1,m2) (sol!!n1!!0!!n2) (n1,n2), rand'')
-  else (MoveOne (sol!!m1!!0!!m2) (m1,m2) (n1,n2), rand'')
+  then (MoveTwo (sol `Sq.index` m1 `Sq.index` m2)
+        (m1,m2) (sol `Sq.index` n1 `Sq.index` n2) (n1,n2), rand'')
+  else (MoveOne (sol `Sq.index` m1 `Sq.index` m2) (m1,m2) (n1,n2), rand'')
   where
     (rand', [m1, m2, n1, n2]) = (rand, []) ~# randomB sol
-      ~# randomB (sol !! m1 !! 0)
+      ~# randomB (sol `Sq.index` m1)
       ~# randomB sol
-      ~# randomB (sol !! n1 !! 0)
+      ~# randomB (sol `Sq.index` n1)
     (twoP :: Bool, rand'') = random rand'
 
-randomB :: [a] -> StdGen -> (Int, StdGen)
+randomB :: (Sq.Seq a) -> StdGen -> (Int, StdGen)
 randomB list = randomR (0, length list)
 --
 
@@ -181,13 +189,13 @@ checkValues = do
   trucks <- asks getTrucks
   routes <- asks getRoutes
   return $! if null $ V.filter
-               (\a -> a > (1/2)*(foldl' max 0 (fmap autonomy trucks)))
+               (\a -> a > (1/2)*(foldl' max 0 (fmap truckAutonomy trucks)))
                $ getRow 1 routes
             then False
             else True
 
 {- Main loop. -}
-anneal :: StdGen -> Time -> Matrix Float -> Cost -> Solution -> Solution
+anneal :: StdGen -> Time -> Matrix Distance -> Cost -> Solution -> Solution
 anneal rand !time mtrx !cost !sol = if (time >= tmax)
   then sol
   else anneal rand'' (time - 1) mtrx cost $
@@ -207,14 +215,14 @@ runApp = do
   randGen <- getStdGen
 
   -- create configuration
-  let conf = Config truckList' routeList clientList' tmax
+  let conf = Config truckList' routeList (indexes (length clientList)) tmax
       x  = return 5 :: Reader Config Int
 
   -- verify if it's possible to solve
   valid <- runReaderT checkValues conf
   if not valid
-    then putStrLn "at least one route is impossible, abort."
-    else do
+  then putStrLn "at least one route is impossible, abort."
+  else do
 
     -- generate an initial solution
     init' <- runReaderT initSol conf
