@@ -10,7 +10,6 @@ module Functions
 
 import           Control.Monad.Reader
 import           Data.List
-import           Data.List.Index
 import           Data.Matrix
 import qualified Data.Sequence        as Sq
 import qualified Data.Text            as T
@@ -67,13 +66,13 @@ initSol' !sol !clients rand = case clients of
 -- generates an empty solution from the number of trucks.
 emptySol :: (MonadReader Config m, MonadIO m) => m Solution
 emptySol = do
-  listTrucks <- asks getTrucks
+  listTrucks <- asks forTrucks
   return $! Sq.fromList $ take (length listTrucks) $ repeat Sq.empty
 
 initSol :: (MonadReader Config m, MonadIO m) => m (StdGen -> Solution)
 initSol = do
   empty <- emptySol
-  clientList <- asks getClients
+  clientList <- asks forClients
   return $! initSol' empty $ V.toList $ clientList
 
 -- Compute the total cost of a truck's route
@@ -186,13 +185,11 @@ Checking:
 -}
 checkValues :: (MonadReader Config m, MonadIO m) => m Bool
 checkValues = do
-  trucks <- asks getTrucks
-  routes <- asks getRoutes
-  return $! if null $ V.filter
+  trucks <- asks forTrucks
+  routes <- asks forRoutes
+  return $! not $ null $ V.filter
                (\a -> a > (1/2)*(foldl' max 0 (fmap truckAutonomy trucks)))
                $ getRow 1 routes
-            then False
-            else True
 
 {- Main loop. -}
 anneal :: StdGen -> Time -> Matrix Distance -> Cost -> Solution -> Solution
@@ -232,7 +229,7 @@ runApp = do
     let initcost = totalCost init
 
     -- calculate
-    let finalSol = anneal randGen (getTMax conf) (getRoutes conf) initcost init
+    let finalSol = anneal randGen (forTMax conf) (forRoutes conf) initcost init
 
     -- return result
     putStrLn $ "the solution is: " ++ show finalSol

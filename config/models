@@ -1,0 +1,18 @@
+-- Database schema for the app.
+-- 
+Client json
+  name Text
+  pkgWeight Double
+  deriving Show
+ServiceStation json
+  name Text
+  price Double
+  deriving Show
+Depot json
+  name Text
+  deriving Show
+Truck json
+  plate Text
+  capacity Double
+  autonomy Double
+  deriving Show
