@@ -14,19 +14,16 @@ import           Data.Matrix
 import qualified Data.Sequence        as Sq
 import qualified Data.Text            as T
 import           Data.Time
+import           Data.Time.Format
 import qualified Data.Vector          as V
 import           System.Random
 
 import           Types
 import           Utils
 
--- la lista de camiones.
--- TODO: change this for Reader Monad
-truckList :: [Truck]
-truckList = [Truck "ABC123" 30 20, Truck "XYZ789" 30 25]
-
-truckList' :: V.Vector Truck
-truckList' = V.fromList truckList
+-- cuenta
+account :: Account
+account = Account 123 "Dinero SA" (Just "Dinero y algo mas" ) "calle falsa 123"
 
 -- la matriz de distancias.
 -- TODO: change this for Reader Monad
@@ -36,13 +33,16 @@ routeList = matrix 10 10 (\(i, j) -> fromIntegral $ abs (i-j))
 parseDate :: String -> LocalTime
 parseDate = parseTimeOrError True defaultTimeLocale "%d %m %Y %H:%M:%S"
 
--- La lista de clientes.
+-- La lista de ubicaciones.
 -- TODO: this goes into the Reader Monad
-clientList :: V.Vector Client
-clientList = V.fromList [Client "Juan" 10.0
-                        , Client "Maria" 15.0]
+clientList :: V.Vector Location
+clientList = V.fromList [Location
+                         "Calle bogotá conjunto villahermosa casa 9"
+                         10.0 75.0
+                        , Location "Avenida Dinero calle 123"
+                          15.0 70.0]
 
-indexes' :: Int -> [Id Client]
+indexes' :: Int -> [Index]
 indexes' 0 = []
 indexes' n = n:(indexes' $ n - 1)
 
@@ -54,13 +54,13 @@ tmax :: Time
 tmax = 50
 
 -- Generate a sample solution by randomly assigning clients to the trucks.
-initSol' :: Solution -> [Id Client] -> StdGen -> Solution
+initSol' :: Solution -> [Index] -> StdGen -> Solution
 initSol' !sol !clients rand = case clients of
   []     -> sol
   (x:xs) -> initSol' (insertLoc i x sol) xs rand'
   where
     (i, rand') = randomR (1, length clients) rand
-    insertLoc :: Int -> Id Client -> Solution -> Solution
+    insertLoc :: Int -> Index -> Solution -> Solution
     insertLoc i client = Sq.adjust' (Sq.insertAt 0 client) i
 
 -- generates an empty solution from the number of trucks.
@@ -76,11 +76,11 @@ initSol = do
   return $! initSol' empty $ V.toList $ clientList
 
 -- Compute the total cost of a truck's route
-truckCost' :: Cost -> Id Client -> Sq.Seq (Id Client) -> Cost
+truckCost' :: Cost -> Index -> Sq.Seq Index -> Cost
 truckCost' cost last Sq.Empty = cost + getElem last 1 routeList
 truckCost' cost last (x Sq.:<| xs) = truckCost' (cost + getElem last x routeList) x xs
 
-truckCost :: Sq.Seq (Id Client) -> Cost
+truckCost :: Sq.Seq Index -> Cost
 truckCost = truckCost' 0 1
 
 -- Energy function, measuring the total travel distance for the current
@@ -119,7 +119,7 @@ updCost curCost sol mtrx modif = case modif of
     + get a (loc n1 n2 (+))
   where
     get x y = getElem x y mtrx
-    (!+) :: Sq.Seq (Id Client) -> Int -> Id Client
+    (!+) :: Sq.Seq Index -> Int -> Index
     (!+) l i = if (i > (length l)||i < 0) then 1 else l `Sq.index` i
     loc x y sig = (sol `Sq.index` x !+ (sig y 1))
 
@@ -188,7 +188,7 @@ checkValues = do
   trucks <- asks forTrucks
   routes <- asks forRoutes
   return $! not $ null $ V.filter
-               (\a -> a > (1/2)*(foldl' max 0 (fmap truckAutonomy trucks)))
+               (\a -> a > (1/2)*(foldl' max 0 (fmap vehicleAutonomy trucks)))
                $ getRow 1 routes
 
 {- Main loop. -}
@@ -206,30 +206,30 @@ anneal rand !time mtrx !cost !sol = if (time >= tmax)
     (solModif, rand'') = getSwap rand' sol
 
 {- Executable. -}
-runApp :: IO ()
-runApp = do
-  -- get random generator
-  randGen <- getStdGen
+-- runApp :: IO ()
+-- runApp = do
+--   -- get random generator
+--   randGen <- getStdGen
 
-  -- create configuration
-  let conf = Config truckList' routeList (indexes (length clientList)) tmax
-      x  = return 5 :: Reader Config Int
+--   -- create configuration
+--   let conf = Config truckList' routeList (indexes (length clientList)) tmax
+--       x  = return 5 :: Reader Config Int
 
-  -- verify if it's possible to solve
-  valid <- runReaderT checkValues conf
-  if not valid
-  then putStrLn "at least one route is impossible, abort."
-  else do
+--   -- verify if it's possible to solve
+--   valid <- runReaderT checkValues conf
+--   if not valid
+--   then putStrLn "at least one route is impossible, abort."
+--   else do
 
-    -- generate an initial solution
-    init' <- runReaderT initSol conf
-    let init = init' randGen
+--     -- generate an initial solution
+--     init' <- runReaderT initSol conf
+--     let init = init' randGen
 
-    -- calculate initial cost
-    let initcost = totalCost init
+--     -- calculate initial cost
+--     let initcost = totalCost init
 
-    -- calculate
-    let finalSol = anneal randGen (forTMax conf) (forRoutes conf) initcost init
+--     -- calculate
+--     let finalSol = anneal randGen (forTMax conf) (forRoutes conf) initcost init
 
-    -- return result
-    putStrLn $ "the solution is: " ++ show finalSol
+--     -- return result
+--     putStrLn $ "the solution is: " ++ show finalSol

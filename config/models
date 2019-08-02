@@ -1,18 +1,45 @@
 -- Database schema for the app.
--- 
-Client json
-  name Text
-  pkgWeight Double
-  deriving Show
-ServiceStation json
-  name Text
-  price Double
-  deriving Show
-Depot json
-  name Text
-  deriving Show
-Truck json
-  plate Text
-  capacity Double
+-- -- -- 
+
+Account json
+  nit Int
+  razonSocial Text maxlen=50
+  nombreComercial Text maxlen=50 Maybe
+  address Text
+  Primary nit
+  
+User json
+  firstName Text maxlen=50 Maybe
+  lastName Text maxlen=50
+  age Int Maybe
+  account AccountId
+
+Vehicle json
+  licensePlate Text maxlen=10
+  age Int
+  mileage Double
+  lastMaintenance UTCTime Maybe
+  lastOilChange UTCTime Maybe
+  volumeCapacity Double Maybe
+  weightCapacity Double Maybe
   autonomy Double
-  deriving Show
+  account AccountId
+  Primary licensePlate
+
+Location json
+  address Text maxlen=100
+  latitude Double
+  longitude Double
+
+SingularShipment json
+  arrivalLocation LocationId
+  departureLocation LocationId
+  expectedArrival UTCTime
+  actualArrival UTCTime Maybe
+  weight Double Maybe
+
+RegularShipment json
+  arrivalLocation LocationId
+  departureLocation LocationId
+  expectedArrival UTCTime
+  repeatAfter Int -- number of minutes

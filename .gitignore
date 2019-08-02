@@ -1,4 +1,6 @@
 .stack-work/
 AnnealedVRP.cabal
 *~
-analysis.txt
+*.txt
+*.http
+
