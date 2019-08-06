@@ -1,26 +1,47 @@
 name:                AnnealedVRP
 version:             0.1.0.0
-github:              "githubuser/AnnealedVRP"
+github:              "LuisChDev/AnnealedVRP"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2019 Author name here"
+author:              "Luis Ch."
+maintainer:          "luischa123@gmail.com"
+copyright:           "2019 Luis Ch."
 
 extra-source-files:
 - README.md
 - ChangeLog.md
 
 # Metadata used when publishing your package
-# synopsis:            Short description of your package
+# synopsis:            TMS JSON backend
 # category:            Web
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/AnnealedVRP#readme>
+description:         Please see the README on GitHub at <https://github.com/LuisChdev/AnnealedVRP#readme>
 
 dependencies:
+- aeson >= 1.4
 - base >= 4.7 && < 5
+- containers >= 0.6
+- esqueleto
+- matrix
+- monad-control >= 1.0
+- monad-logger >= 0.3 
+- mtl >= 2.2
+- persistent
+- persistent-postgresql
+- persistent-template
+- random
+- resource-pool >= 0.2
+- servant
+- servant-server
+- text >= 1.2
+- time >= 1.8
+- transformers >= 0.5
+- unliftio-core >= 0.1
+- vector >= 0.12
+- wai >= 3.2
+- warp >= 3.2
 
 library:
   source-dirs: src
@@ -46,3 +67,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - AnnealedVRP
+    - hspec >= 2.6

@@ -11,11 +11,13 @@ module Types where
 
 import           Control.Monad.Reader
 import           Data.Matrix
+import           Data.Pool
 import           Data.Sequence
 import           Data.Text
 import           Data.Time
 import qualified Data.Vector            as V
 import           Database.Persist.Quasi
+import           Database.Persist.Sql
 import           Database.Persist.TH
 import           System.Random
 
@@ -62,6 +64,7 @@ type Probability = Int
 -- representing each location in the order they appear in the matrix of
 -- distances.
 type Solution = Seq (Seq Index)
+type Route = Seq Index
 
 -- Funciones que se usan para el recocido simulado
 type EnergyFunction a = a -> Cost
@@ -75,6 +78,9 @@ data Config = Config
   , forRoutes  :: Matrix Distance
   , forClients :: V.Vector Index
   , forTMax    :: Time }
+
+data ConfigDB = ConfigDB
+  { forPool :: Pool SqlBackend }
 
 -- this type represents a possible change in the solution.
 data Modif = MoveTwo Index (Int, Int) Index (Int, Int)

@@ -6,15 +6,15 @@ module Handler.Account where
 import           Import
 
 getAccount :: (MonadIO m, MonadError ServantErr m)
-          => SqlBackend -> Int -> m Account
+          => SqlBackend -> Key Account -> m Account
 getAccount conn nit = do
   account :: [Entity Account]
          <- liftIO $ (flip runSqlConn) conn $
             select $ from $ \clt -> do
-              where_ (clt ^. AccountNit ==. val nit)
+              where_ (clt ^. AccountId ==. val nit)
               return clt
   if null account
-  then throwError $ err404 { errBody = "User does not exist" }
+  then throwError $ err404 { errBody = "Account does not exist" }
   else return $! entityVal $ (account !! 0)
 
 getAccounts :: MonadIO m => SqlBackend -> m [Account]

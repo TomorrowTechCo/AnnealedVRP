@@ -7,12 +7,12 @@ import           Import
 
 
 getVehicle :: (MonadIO m, MonadError ServantErr m)
-           => SqlBackend -> String -> m Vehicle
+           => SqlBackend -> VehicleId -> m Vehicle
 getVehicle conn plate = do
   vehicle :: [Entity Vehicle]
            <- liftIO $ (flip runSqlConn) conn $
               select $ from $ \vcl -> do
-                where_ (vcl ^. VehicleLicensePlate ==. (val $ pack plate))
+                where_ (vcl ^. VehicleId ==. val plate)
                 return vcl
   if null vehicle
   then throwError $ err404 { errBody = "User does not exist" }

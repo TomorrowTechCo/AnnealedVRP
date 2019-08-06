@@ -25,6 +25,9 @@ import           Database.Persist.Types      (entityVal)
 
 import           Functions
 import           Handler.Account
+import           Handler.RegularShipment
+import           Handler.Shipment
+import           Handler.User
 import           Handler.Vehicle
 import           Types
 
@@ -38,25 +41,48 @@ import           Types
   solution. The algorithm will be re-run every time new clients are inserted.
 -}
 type TopLevelAPI =
-       "Accounts" :> (Capture "nit" Int :> Get '[JSON] Account
+       "Accounts" :> (Capture "nit" AccountId :> Get '[JSON] Account
                       :<|> ReqBody '[JSON] Account :> Post '[JSON] AccountId
                       :<|> Get '[JSON] [Account])
-  :<|> "Vehicles" :> (Capture "plate" String :> Get '[JSON] Vehicle
+  :<|> "Vehicles" :> (Capture "plate" VehicleId :> Get '[JSON] Vehicle
                       :<|> ReqBody '[JSON] Vehicle :> Post '[JSON] VehicleId
                       :<|> Get '[JSON] [Vehicle])
+  :<|> "Users" :> (Capture "userid" UserId :> Get '[JSON] User
+                   :<|> ReqBody '[JSON] User :> Post '[JSON] UserId
+                   :<|> Get '[JSON] [User])
+  :<|> "Shipments" :> (Capture "shipId" SingularShipmentId
+                        :> Get '[JSON] SingularShipment
+                      :<|> ReqBody '[JSON] SingularShipment
+                        :> Post '[JSON] SingularShipmentId
+                      :<|> Get '[JSON] [SingularShipment]
+                      :<|> "Regular" :> (Capture "regularId" RegularShipmentId
+                                         :> Get '[JSON] RegularShipment
+                                         :<|> ReqBody '[JSON] RegularShipment
+                                         :> Post '[JSON] RegularShipmentId
+                                         :<|> Get '[JSON] [RegularShipment]))
+  -- :<|> "Route" :> (Capture "vehicle" VehicleId :> Get '[JSON] Route
+  --                  :<|> Get '[JSON] Solution)
 
 topLevelAPI :: Proxy TopLevelAPI
 topLevelAPI = Proxy
--- --
 
-app' :: Pool SqlBackend -> Application
-app' pool = serve topLevelAPI $
+server :: Pool SqlBackend -> Server TopLevelAPI
+server pool =
        (withRes' pool getAccount
          :<|> withRes' pool postAccount
          :<|> withRes pool getAccounts)
   :<|> (withRes' pool getVehicle
          :<|> withRes' pool postVehicle
          :<|> withRes pool getVehicles)
+  :<|> (withRes' pool getUser
+         :<|> withRes' pool postUser
+         :<|> withRes pool getUsers)
+  :<|> (withRes' pool getShipment
+         :<|> withRes' pool postShipment
+         :<|> withRes pool getShipments
+         :<|> (withRes' pool getRShipment
+               :<|> withRes' pool postRShipment
+               :<|> withRes pool getRShipments))
   where
     -- zero args
     withRes :: (MonadBaseControl IO m) => Pool a -> (a -> m c) -> m c
@@ -65,6 +91,9 @@ app' pool = serve topLevelAPI $
     withRes' :: (MonadBaseControl IO m) => Pool a -> (a -> b -> m c) -> b -> m c
     withRes' pool f b = withResource pool $ \a -> f a b
     -- TODO: push this inside of a reader monad
+
+app' :: Pool SqlBackend -> Application
+app' pool = serve topLevelAPI $ server pool
 
 migrateTables :: IO ()
 migrateTables = do
